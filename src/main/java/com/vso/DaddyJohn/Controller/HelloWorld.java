@@ -1,12 +1,12 @@
-package com.vso.DaddyJohn.Service;
+package com.vso.DaddyJohn.Controller;
 
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Service
+@Controller
 @RestController
-public class helthCheck {
+public class HelloWorld {
 
     @GetMapping("/hello")
     public String hello(){
