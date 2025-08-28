@@ -80,7 +80,7 @@ public class MessageService {
         Message savedAssistantMessage = messageRepo.save(assistantMessage);
 
         // Step 5: Update the user's daily token and message count (to be implemented)
-        // usageService.recordUsage(user.getId(), 1, userMessage.getTokenCount() + responseTokenCount);
+        UsageService.recordUsage(user.getId(), 1, userMessage.getTokenCount() + responseTokenCount);
 
         return convertToDto(savedAssistantMessage);
     }

@@ -24,4 +24,7 @@ public class DailyUsage {
     private int messagesSent = 0;
 
     private int tokensUsed = 0;
+
+    public void setUserId(ObjectId userId) {
+    }
 }

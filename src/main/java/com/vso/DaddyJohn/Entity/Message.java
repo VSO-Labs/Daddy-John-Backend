@@ -11,6 +11,9 @@ import java.time.LocalDateTime;
 @Document(collection = "messages")
 @Data
 public class Message {
+    public void setConversationId(ObjectId conversationId) {
+    }
+
     public enum Role {
         USER, ASSISTANT, SYSTEM
     }

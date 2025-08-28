@@ -11,4 +11,6 @@ import java.util.Optional;
 public interface UserSubscriptionRepo extends MongoRepository<UserSubscription, ObjectId> {
     // Find the active subscription for a user
     Optional<UserSubscription> findByUserIdAndIsActiveTrue(ObjectId userId);
+
+    Optional<UserSubscription> findByUserIdAndIsActive(ObjectId id, boolean b);
 }

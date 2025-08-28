@@ -22,5 +22,11 @@ public class Conversation {
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private LocalDateTime updatedAt = LocalDateTime.now();
+
+    public void setUserId(ObjectId id) {
+    }
+
+    public Object getUserId() {
+    }
 }
 

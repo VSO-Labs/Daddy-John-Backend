@@ -36,4 +36,13 @@ public class UserSubscription {
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private LocalDateTime updatedAt = LocalDateTime.now();
+
+    public void setUserId(ObjectId id) {
+    }
+
+    public void setPlanId(ObjectId id) {
+    }
+
+    public ObjectId getPlanId() {
+    }
 }
