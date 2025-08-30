@@ -43,12 +43,10 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(authEntryPoint))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/User/signUp").permitAll()
-                        .requestMatchers("/Public/**", "/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/signup").permitAll()
+                        .requestMatchers("/api/conversations/**").authenticated()
                         .anyRequest().authenticated()
-                )
-                .httpBasic(Customizer.withDefaults()) // optional: you can disable if you don't want basic auth
-        ;
+                );
 
         http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 

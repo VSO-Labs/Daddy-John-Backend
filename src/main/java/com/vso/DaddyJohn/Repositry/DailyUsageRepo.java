@@ -11,5 +11,5 @@ import java.util.Optional;
 @Repository
 public interface DailyUsageRepo extends MongoRepository<DailyUsage, ObjectId> {
     // Find today's usage record for a specific user
-    Optional<DailyUsage> findByUserIdAndUsageDate(ObjectId userId, LocalDate date);
+    Optional<DailyUsage> findByUser_IdAndUsageDate(ObjectId userId, LocalDate date);
 }

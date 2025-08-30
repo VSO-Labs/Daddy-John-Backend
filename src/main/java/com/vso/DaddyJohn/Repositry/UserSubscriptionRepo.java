@@ -4,13 +4,10 @@ import com.vso.DaddyJohn.Entity.UserSubscription;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
-
 import java.util.Optional;
 
 @Repository
 public interface UserSubscriptionRepo extends MongoRepository<UserSubscription, ObjectId> {
-    // Find the active subscription for a user
-    Optional<UserSubscription> findByUserIdAndIsActiveTrue(ObjectId userId);
-
-    Optional<UserSubscription> findByUserIdAndIsActive(ObjectId id, boolean b);
+    // Correctly find an active subscription by the user's ObjectId
+    Optional<UserSubscription> findByUserIdAndIsActive(ObjectId userId, boolean isActive);
 }
