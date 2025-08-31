@@ -73,7 +73,9 @@ public class SecurityConfig {
                 "https://daddy-john-backend.onrender.com",
                 "https://*.onrender.com",
                 "http://localhost:3000",
-                "http://localhost:8080"
+                "http://localhost:8080",
+            "https://localhost:5173",
+            "https://expert-goldfish-7gr54g5p4gghrgvj-5173.app.github.dev"
         ));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(List.of("*"));
