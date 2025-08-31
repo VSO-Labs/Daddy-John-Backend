@@ -1,35 +1,41 @@
-    package com.vso.DaddyJohn.Repositry;
+package com.vso.DaddyJohn.Repositry;
 
-    import com.vso.DaddyJohn.Entity.Users;
-    import org.springframework.beans.factory.annotation.Autowired;
-    import org.springframework.security.core.userdetails.UserDetails;
-    import org.springframework.security.core.userdetails.User;
-    import org.springframework.security.core.userdetails.UserDetailsService;
-    import org.springframework.security.core.userdetails.UsernameNotFoundException;
-    import org.springframework.stereotype.Repository;
-    import org.springframework.stereotype.Service;
+import com.vso.DaddyJohn.Entity.Users;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
-    @Service
-    public class UserDetailService implements UserDetailsService {
+import java.util.stream.Collectors;
 
-        private final UserRepo userRepo;
+@Service
+public class UserDetailService implements UserDetailsService {
 
-        public UserDetailService(UserRepo userRepo) {
-            this.userRepo = userRepo;
-        }
+    private final UserRepo userRepo;
 
-        @Override
-        public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-            Users user  = userRepo.findByUsername(username);
-
-            if(user != null){
-                return User.builder()
-                        .username(user.getUsername())
-                        .password(user.getPasswordHash())
-                        .roles(user.getRoles().toArray(new String[0]))
-                        .build();
-            }
-
-            throw new UsernameNotFoundException("USERNAME NOT FOUND" + username);
-        }
+    public UserDetailService(UserRepo userRepo) {
+        this.userRepo = userRepo;
     }
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        Users user  = userRepo.findByUsername(username);
+
+        if (user != null) {
+            var roles = user.getRoles(); // List<String>
+            var authorities = roles.stream()
+                    .map(r -> r.startsWith("ROLE_") ? r : "ROLE_" + r)
+                    .map(SimpleGrantedAuthority::new)
+                    .collect(Collectors.toList());
+
+            return User.withUsername(user.getUsername())
+                    .password(user.getPasswordHash())
+                    .authorities(authorities)
+                    .build();
+        }
+
+        throw new UsernameNotFoundException("USERNAME NOT FOUND: " + username);
+    }
+}
