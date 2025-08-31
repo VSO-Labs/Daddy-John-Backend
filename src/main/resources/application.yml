@@ -4,13 +4,20 @@ spring:
             uri: mongodb+srv://vsolabswork:Vs0labs25@cluster0.o5mrlm7.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
             database: daddyJohn
             auto-index-creation: true
+    logging:
+        level:
+            com.vso.DaddyJohn: DEBUG
+            org.springframework.security: DEBUG
+            org.springframework.web.cors: DEBUG
+
+server:
+    port: ${PORT:8080}
 
 app:
     jwt:
         secret: ${JWT_SECRET:YourDefaultSecretValueIfNotProvided}
         expiration-ms: 3600000
 
-
 services:
     chatbot:
-        django-url: http://127.0.0.1:8000/api/chat
+        django-url: ${DJANGO_API_URL:http://127.0.0.1:8000/api/chat}

@@ -12,13 +12,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.stream.Collectors;
 
-@Component
+@Component // Add this import
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
@@ -37,7 +38,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // SKIP JWT processing for public endpoints
-        if (path.equals("/hello") || path.startsWith("/api/auth/")) {
+        if (path.equals("/hello") || path.startsWith("/api/auth/") || path.equals("/")) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -49,19 +50,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         if (token != null && jwtUtil.validateToken(token) && SecurityContextHolder.getContext().getAuthentication() == null) {
-            String username = jwtUtil.getUsernameFromToken(token);
-            UserDetails userDetails = userDetailService.loadUserByUsername(username);
+            try {
+                String username = jwtUtil.getUsernameFromToken(token);
+                UserDetails userDetails = userDetailService.loadUserByUsername(username);
 
-            // Use roles from token for authorities (stateless)
-            List<SimpleGrantedAuthority> authorities = jwtUtil.getRolesFromToken(token)
-                    .stream()
-                    .map(SimpleGrantedAuthority::new)
-                    .collect(Collectors.toList());
+                // Use roles from token for authorities (stateless)
+                List<SimpleGrantedAuthority> authorities = jwtUtil.getRolesFromToken(token)
+                        .stream()
+                        .map(SimpleGrantedAuthority::new)
+                        .collect(Collectors.toList());
 
-            UsernamePasswordAuthenticationToken authToken =
-                    new UsernamePasswordAuthenticationToken(userDetails, null, authorities);
-            authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(authToken);
+                UsernamePasswordAuthenticationToken authToken =
+                        new UsernamePasswordAuthenticationToken(userDetails, null, authorities);
+                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(authToken);
+            } catch (Exception e) {
+                // Log the error but continue without authentication
+                System.out.println("JWT processing error: " + e.getMessage());
+            }
         }
 
         filterChain.doFilter(request, response);

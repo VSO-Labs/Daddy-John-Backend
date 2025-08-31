@@ -35,7 +35,6 @@ public class SecurityConfig {
         this.authEntryPoint = authEntryPoint;
     }
 
-    // create filter bean here so dependencies injected cleanly
     @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter() {
         return new JwtAuthenticationFilter(jwtUtil, userDetailService);
@@ -49,29 +48,35 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(authEntryPoint))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // public endpoints
-                        .requestMatchers(HttpMethod.GET, "/hello").permitAll()
+                        // public endpoints - be more specific about paths
+                        .requestMatchers(HttpMethod.GET, "/", "/hello", "/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/signup").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // Mock endpoint for testing
+                        .requestMatchers("/api/mock/**").permitAll()
                         // protected endpoints
                         .requestMatchers("/api/conversations/**").authenticated()
+                        .requestMatchers("/User/**").authenticated()
                         .anyRequest().authenticated()
                 );
 
-        // register JWT filter before username/password filter
         http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // CORS: Use allowedOriginPatterns (avoid allowedOrigins("*") with credentials)
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Replace with your frontend URL(s). Example:
-        configuration.setAllowedOriginPatterns(List.of("https://your-frontend.onrender.com", "http://localhost:3000"));
+        // Add your Render backend URL and common frontend URLs
+        configuration.setAllowedOriginPatterns(List.of(
+                "https://daddy-john-backend.onrender.com",
+                "https://*.onrender.com",
+                "http://localhost:3000",
+                "http://localhost:8080"
+        ));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "Accept"));
+        configuration.setAllowedHeaders(List.of("*"));
         configuration.setExposedHeaders(List.of("Authorization"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
