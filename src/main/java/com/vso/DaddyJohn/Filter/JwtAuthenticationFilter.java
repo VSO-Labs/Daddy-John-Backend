@@ -1,22 +1,20 @@
 package com.vso.DaddyJohn.Filter;
 
 import com.vso.DaddyJohn.Utils.JwtUtil;
+import com.vso.DaddyJohn.Repositry.UserDetailService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.lang.NonNull;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.web.filter.OncePerRequestFilter;
-import com.vso.DaddyJohn.Repositry.UserDetailService;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.stream.Collectors;
 
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -33,27 +31,37 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {
 
-        final String authHeader = request.getHeader("Authorization");
-        String token = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7);
+        String path = request.getRequestURI();
+
+        // --- SKIP JWT processing for public endpoints ---
+        if (path.startsWith("/api/auth/") || path.equals("/hello")) {
+            filterChain.doFilter(request, response);
+            return;
         }
 
-        if (token != null && jwtUtil.validateToken(token) && SecurityContextHolder.getContext().getAuthentication() == null) {
-            String username = jwtUtil.getUsernameFromToken(token);
-            UserDetails userDetails = userDetailService.loadUserByUsername(username);
+        // --- JWT extraction + validation ---
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
 
-            // Optional: check token roles vs userDetails roles if you want
-            List<SimpleGrantedAuthority> authorities = jwtUtil.getRolesFromToken(token)
-                    .stream().map(SimpleGrantedAuthority::new).collect(Collectors.toList());
+            if (jwtUtil.validateToken(token) && SecurityContextHolder.getContext().getAuthentication() == null) {
+                String username = jwtUtil.getUsernameFromToken(token);
+                UserDetails userDetails = userDetailService.loadUserByUsername(username);
 
-            UsernamePasswordAuthenticationToken authToken =
-                    new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-            authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(authToken);
+                // Optionally, extract authorities from token
+                var authorities = jwtUtil.getRolesFromToken(token)
+                        .stream()
+                        .map(SimpleGrantedAuthority::new)
+                        .toList();
+
+                UsernamePasswordAuthenticationToken authToken =
+                        new UsernamePasswordAuthenticationToken(userDetails, null, authorities);
+                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+                SecurityContextHolder.getContext().setAuthentication(authToken);
+            }
         }
 
         filterChain.doFilter(request, response);
     }
 }
-
