@@ -18,9 +18,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.Arrays;
-import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -66,30 +67,41 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * Security-level CORS config (used inside filter chain)
+     */
     @Bean
-public CorsConfigurationSource corsConfigurationSource() {
-    CorsConfiguration configuration = new CorsConfiguration();
-    
-    // Allow all origins
-    configuration.addAllowedOriginPattern("*"); // <- better than setAllowedOrigins("*")
-    
-    // Allow all headers
-    configuration.addAllowedHeader("*");
-    
-    // Allow all methods
-    configuration.addAllowedMethod("*");
-    
-    // Expose headers if needed
-    configuration.addExposedHeader("Authorization");
-    
-    // If you don’t want cookies across origins
-    configuration.setAllowCredentials(false);
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
 
-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-    source.registerCorsConfiguration("/**", configuration);
-    return source;
-}
+        configuration.addAllowedOriginPattern("*"); // Allow all origins
+        configuration.addAllowedHeader("*");        // Allow all headers
+        configuration.addAllowedMethod("*");        // Allow all methods
+        configuration.addExposedHeader("Authorization");
+        configuration.setAllowCredentials(false);   // Required when using "*"
 
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    /**
+     * MVC-level CORS config (fixes 403 "Invalid CORS request" for preflight)
+     */
+    @Bean
+    public WebMvcConfigurer corsConfigurer() {
+        return new WebMvcConfigurer() {
+            @Override
+            public void addCorsMappings(CorsRegistry registry) {
+                registry.addMapping("/**")
+                        .allowedOriginPatterns("*")
+                        .allowedMethods("*")
+                        .allowedHeaders("*")
+                        .exposedHeaders("Authorization")
+                        .allowCredentials(false);
+            }
+        };
+    }
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
