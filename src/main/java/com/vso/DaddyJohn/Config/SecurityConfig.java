@@ -67,31 +67,29 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        
-        // Allow all origins for now (you can change this later)
-        configuration.setAllowedOrigins(Arrays.asList("*"));
-        
-        // Allow all methods
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"));
-        
-        // Allow all headers
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        
-        // Expose Authorization header
-        configuration.setExposedHeaders(Arrays.asList("Authorization"));
-        
-        // Set credentials to false when using "*" for origins
-        configuration.setAllowCredentials(false);
-        
-        // Cache preflight response for 1 hour
-        configuration.setMaxAge(3600L);
+public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration configuration = new CorsConfiguration();
+    
+    // Allow all origins
+    configuration.addAllowedOriginPattern("*"); // <- better than setAllowedOrigins("*")
+    
+    // Allow all headers
+    configuration.addAllowedHeader("*");
+    
+    // Allow all methods
+    configuration.addAllowedMethod("*");
+    
+    // Expose headers if needed
+    configuration.addExposedHeader("Authorization");
+    
+    // If you don’t want cookies across origins
+    configuration.setAllowCredentials(false);
 
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
-    }
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", configuration);
+    return source;
+}
+
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
