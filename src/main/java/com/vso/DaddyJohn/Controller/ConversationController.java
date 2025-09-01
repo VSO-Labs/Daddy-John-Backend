@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/conversations")
+@CrossOrigin(origins = "*", maxAge = 3600)
 public class ConversationController {
 
     private final ConversationService conversationService;
