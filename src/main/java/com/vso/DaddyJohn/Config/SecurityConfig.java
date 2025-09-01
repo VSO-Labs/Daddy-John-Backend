@@ -48,7 +48,7 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(authEntryPoint))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // public endpoints - be more specific about paths
+                        // public endpoints
                         .requestMatchers(HttpMethod.GET, "/", "/hello", "/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/signup").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -68,19 +68,11 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Add your Render backend URL and common frontend URLs
-        configuration.setAllowedOriginPatterns(List.of(
-                "https://daddy-john-backend.onrender.com",
-                "https://*.onrender.com",
-                "http://localhost:3000",
-                "http://localhost:8080",
-            "https://localhost:5173",
-            "https://expert-goldfish-7gr54g5p4gghrgvj-5173.app.github.dev"
-        ));
+        configuration.setAllowedOriginPatterns(List.of("*")); // allow all domains
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setExposedHeaders(List.of("Authorization"));
-        configuration.setAllowCredentials(true);
+        configuration.setAllowCredentials(false); // must be false if using "*"
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
