@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Handles all API requests for messages within a specific conversation.
@@ -55,7 +56,9 @@ public class MessageController {
     public ResponseEntity<MessageDto> postNewTextMessage(
             Authentication authentication,
             @PathVariable String conversationId,
-            @RequestParam("message") String content) {
+            @RequestBody Map<String, String> body) {
+
+        String content = body.get("message");
 
         if (!ObjectId.isValid(conversationId)) {
             throw new IllegalArgumentException("Invalid Conversation ID format. Please provide a valid 24-character hex string.");
@@ -69,6 +72,7 @@ public class MessageController {
 
         return ResponseEntity.ok(response);
     }
+
 
     /**
      * Posts a new message with photos to a conversation and gets the AI's response.
