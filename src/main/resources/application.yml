@@ -33,4 +33,4 @@ app:
 
 services:
     chatbot:
-        django-url: https://renderdeploy-1-gpz1.onrender.com/chat
+        django-url: ${https://renderdeploy-1-gpz1.onrender.com/chat}
