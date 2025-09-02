@@ -51,8 +51,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/", "/hello", "/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/signup").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // File serving endpoints - allow public access to uploaded files
+                        .requestMatchers(HttpMethod.GET, "/files/**").permitAll()
+
                         // Mock endpoint for testing
                         .requestMatchers("/api/mock/**").permitAll()
+
                         // protected endpoints
                         .requestMatchers("/api/conversations/**").authenticated()
                         .requestMatchers("/User/**").authenticated()
@@ -69,7 +74,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
 
         // Allow all origins
-        configuration.addAllowedOriginPattern("*"); // <- better than setAllowedOrigins("*")
+        configuration.addAllowedOriginPattern("*");
 
         // Allow all headers
         configuration.addAllowedHeader("*");
@@ -80,14 +85,13 @@ public class SecurityConfig {
         // Expose headers if needed
         configuration.addExposedHeader("Authorization");
 
-        // If you don’t want cookies across origins
+        // If you don't want cookies across origins
         configuration.setAllowCredentials(false);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
-
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
