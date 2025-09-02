@@ -9,6 +9,8 @@ import com.vso.DaddyJohn.Repositry.ConversationRepo;
 import com.vso.DaddyJohn.Repositry.MessageRepo;
 import com.vso.DaddyJohn.Repositry.UserRepo;
 import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.domain.Page;
@@ -18,18 +20,17 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 public class MessageService {
+
+    private static final Logger logger = LoggerFactory.getLogger(MessageService.class);
 
     private final MessageRepo messageRepo;
     private final ConversationRepo conversationRepo;
@@ -54,9 +55,6 @@ public class MessageService {
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * Posts a new message with optional photo attachments
-     */
     public MessageDto postNewMessage(ObjectId conversationId, String content,
                                      String username, List<MultipartFile> photos) {
         Users user = findUserByUsername(username);
@@ -79,7 +77,7 @@ public class MessageService {
         userMessage.setConversation(conversation);
         userMessage.setRole(Message.Role.USER);
         userMessage.setContent(content);
-        userMessage.setTokenCount(0); // Set user message token count to 0
+        userMessage.setTokenCount(0);
         userMessage.setPhotoUrls(photoUrls);
         messageRepo.save(userMessage);
 
@@ -93,6 +91,7 @@ public class MessageService {
             }
             aiResponseContent = (String) response.getOrDefault("response", "Sorry, I couldn't process your request.");
         } catch (Exception e) {
+            logger.error("Error calling chatbot service: ", e);
             aiResponseContent = "Sorry, an error occurred while connecting to the chatbot service: " + e.getMessage();
         }
 
@@ -100,10 +99,10 @@ public class MessageService {
         assistantMessage.setConversation(conversation);
         assistantMessage.setRole(Message.Role.ASSISTANT);
         assistantMessage.setContent(aiResponseContent);
-        assistantMessage.setTokenCount(0); // Set assistant message token count to 0
+        assistantMessage.setTokenCount(0);
         Message savedAssistantMessage = messageRepo.save(assistantMessage);
 
-        usageService.recordUsage(user, 0); // Record usage as 0
+        usageService.recordUsage(user, 0);
 
         return convertToDto(savedAssistantMessage);
     }
@@ -114,8 +113,15 @@ public class MessageService {
 
     private Map<String, Object> callChatbotWithText(String content) {
         try {
+            // Log the API URL being used
+            logger.info("Calling Django API at: {}", djangoApiUrl);
+
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Accept", MediaType.APPLICATION_JSON_VALUE);
+
+            // Add User-Agent header (some APIs require this)
+            headers.set("User-Agent", "DaddyJohn-Backend/1.0");
 
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("user_input", content);
@@ -124,20 +130,41 @@ public class MessageService {
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
 
-            System.out.println("Sending request to: " + djangoApiUrl);
-            System.out.println("Request body: " + requestBody);
+            logger.debug("Request Headers: {}", headers);
+            logger.debug("Request Body: {}", requestBody);
 
-            Map<String, Object> response = restTemplate.postForObject(djangoApiUrl, entity, Map.class);
+            ResponseEntity<Map> responseEntity = restTemplate.exchange(
+                    djangoApiUrl,
+                    HttpMethod.POST,
+                    entity,
+                    Map.class
+            );
 
-            System.out.println("Received response: " + response);
+            logger.info("Response Status: {}", responseEntity.getStatusCode());
+            logger.debug("Response Body: {}", responseEntity.getBody());
 
-            return response != null ? response : new HashMap<>();
+            if (responseEntity.getStatusCode().is2xxSuccessful() && responseEntity.getBody() != null) {
+                return responseEntity.getBody();
+            } else {
+                logger.error("Unexpected response status: {}", responseEntity.getStatusCode());
+                Map<String, Object> fallbackResponse = new HashMap<>();
+                fallbackResponse.put("response", "Received unexpected response from chatbot service.");
+                return fallbackResponse;
+            }
+
+        } catch (RestClientException e) {
+            logger.error("RestClientException when calling Django API: ", e);
+            logger.error("API URL: {}", djangoApiUrl);
+
+            // Return a more detailed error message
+            Map<String, Object> fallbackResponse = new HashMap<>();
+            fallbackResponse.put("response", "Failed to connect to chatbot service. Error: " + e.getMessage());
+            return fallbackResponse;
 
         } catch (Exception e) {
-            System.err.println("Error calling chatbot API: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Unexpected error when calling Django API: ", e);
+            logger.error("API URL: {}", djangoApiUrl);
 
-            // Return a fallback response
             Map<String, Object> fallbackResponse = new HashMap<>();
             fallbackResponse.put("response", "Service temporarily unavailable. Please try again.");
             return fallbackResponse;
@@ -145,31 +172,54 @@ public class MessageService {
     }
 
     private Map<String, Object> callChatbotWithPhotos(String content, List<MultipartFile> photos) throws IOException {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        try {
+            logger.info("Calling Django API with photos at: {}", djangoApiUrl);
 
-        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
-        Map<String, Object> jsonPayload = new HashMap<>();
-        jsonPayload.put("user_input", content);
-        jsonPayload.put("history", Collections.emptyList());
-        jsonPayload.put("latest_summary", null);
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
 
-        body.add("metadata", new HttpEntity<>(jsonPayload, createJsonHeaders()));
+            Map<String, Object> jsonPayload = new HashMap<>();
+            jsonPayload.put("user_input", content);
+            jsonPayload.put("history", Collections.emptyList());
+            jsonPayload.put("latest_summary", null);
 
+            body.add("metadata", new HttpEntity<>(jsonPayload, createJsonHeaders()));
 
-        for (MultipartFile photo : photos) {
-            ByteArrayResource photoResource = new ByteArrayResource(photo.getBytes()) {
-                @Override
-                public String getFilename() {
-                    return photo.getOriginalFilename();
-                }
-            };
-            body.add("photos", photoResource);
+            for (MultipartFile photo : photos) {
+                ByteArrayResource photoResource = new ByteArrayResource(photo.getBytes()) {
+                    @Override
+                    public String getFilename() {
+                        return photo.getOriginalFilename();
+                    }
+                };
+                body.add("photos", photoResource);
+            }
+
+            HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+
+            ResponseEntity<Map> responseEntity = restTemplate.exchange(
+                    djangoApiUrl,
+                    HttpMethod.POST,
+                    entity,
+                    Map.class
+            );
+
+            logger.info("Response Status (with photos): {}", responseEntity.getStatusCode());
+
+            if (responseEntity.getBody() != null) {
+                return responseEntity.getBody();
+            } else {
+                Map<String, Object> fallbackResponse = new HashMap<>();
+                fallbackResponse.put("response", "No response from chatbot service.");
+                return fallbackResponse;
+            }
+
+        } catch (RestClientException e) {
+            logger.error("RestClientException when calling Django API with photos: ", e);
+            throw new RuntimeException("Failed to connect to chatbot service: " + e.getMessage());
         }
-
-        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
-        return restTemplate.postForObject(djangoApiUrl, entity, Map.class);
     }
 
     private HttpHeaders createJsonHeaders() {
@@ -177,7 +227,6 @@ public class MessageService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         return headers;
     }
-
 
     private List<String> validateAndStorePhotos(List<MultipartFile> photos) {
         List<String> photoUrls = new ArrayList<>();
@@ -229,7 +278,6 @@ public class MessageService {
         if (user == null) {
             throw new RuntimeException("User not found: " + username);
         }
-
         return user;
     }
 
