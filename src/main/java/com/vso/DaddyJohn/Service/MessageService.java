@@ -116,16 +116,36 @@ public class MessageService {
     }
 
     private Map<String, Object> callChatbotWithText(String content) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
 
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("user_input", content);
-        requestBody.put("history", Collections.emptyList());
-        requestBody.put("latest_summary", null);
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("user_input", content);
+            requestBody.put("history", Collections.emptyList());
+            requestBody.put("latest_summary", null);
 
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-        return restTemplate.postForObject(djangoApiUrl, entity, Map.class);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+
+            System.out.println("Sending request to: " + djangoApiUrl);
+            System.out.println("Request body: " + requestBody);
+
+            Map<String, Object> response = restTemplate.postForObject(djangoApiUrl, entity, Map.class);
+
+            System.out.println("Received response: " + response);
+
+            return response != null ? response : new HashMap<>();
+
+        } catch (Exception e) {
+            System.err.println("Error calling chatbot API: " + e.getMessage());
+            e.printStackTrace();
+
+            // Return a fallback response
+            Map<String, Object> fallbackResponse = new HashMap<>();
+            fallbackResponse.put("message", "Service temporarily unavailable. Please try again.");
+            fallbackResponse.put("token_count", 10);
+            return fallbackResponse;
+        }
     }
 
     private Map<String, Object> callChatbotWithPhotos(String content, List<MultipartFile> photos) throws IOException {
