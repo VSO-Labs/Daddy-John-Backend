@@ -79,12 +79,11 @@ public class MessageService {
         userMessage.setConversation(conversation);
         userMessage.setRole(Message.Role.USER);
         userMessage.setContent(content);
-        userMessage.setTokenCount(countTokens(content));
+        userMessage.setTokenCount(0); // Set user message token count to 0
         userMessage.setPhotoUrls(photoUrls);
         messageRepo.save(userMessage);
 
         String aiResponseContent;
-        int responseTokenCount;
         try {
             Map<String, Object> response;
             if (photos != null && !photos.isEmpty()) {
@@ -93,20 +92,18 @@ public class MessageService {
                 response = callChatbotWithText(content);
             }
             aiResponseContent = (String) response.getOrDefault("response", "Sorry, I couldn't process your request.");
-            responseTokenCount = (Integer) response.getOrDefault("token_count", countTokens(aiResponseContent));
         } catch (Exception e) {
             aiResponseContent = "Sorry, an error occurred while connecting to the chatbot service: " + e.getMessage();
-            responseTokenCount = countTokens(aiResponseContent);
         }
 
         Message assistantMessage = new Message();
         assistantMessage.setConversation(conversation);
         assistantMessage.setRole(Message.Role.ASSISTANT);
         assistantMessage.setContent(aiResponseContent);
-        assistantMessage.setTokenCount(responseTokenCount);
+        assistantMessage.setTokenCount(0); // Set assistant message token count to 0
         Message savedAssistantMessage = messageRepo.save(assistantMessage);
 
-        usageService.recordUsage(user, userMessage.getTokenCount() + responseTokenCount);
+        usageService.recordUsage(user, 0); // Record usage as 0
 
         return convertToDto(savedAssistantMessage);
     }
@@ -142,8 +139,7 @@ public class MessageService {
 
             // Return a fallback response
             Map<String, Object> fallbackResponse = new HashMap<>();
-            fallbackResponse.put("message", "Service temporarily unavailable. Please try again.");
-            fallbackResponse.put("token_count", 10);
+            fallbackResponse.put("response", "Service temporarily unavailable. Please try again.");
             return fallbackResponse;
         }
     }
@@ -226,15 +222,6 @@ public class MessageService {
             throw new AccessDeniedException("You do not have permission to view these messages.");
         }
         return messageRepo.findByConversationId(conversationId, pageable).map(this::convertToDto);
-    }
-
-    private int countTokens(String text) {
-
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-
-        return (int) Math.ceil(text.length() / 4.0);
     }
 
     private Users findUserByUsername(String username) {
