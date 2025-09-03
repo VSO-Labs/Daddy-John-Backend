@@ -49,6 +49,7 @@ public class MessageService {
     @Value("${services.chatbot.django-url}")
     private String djangoApiUrl;
 
+
     public MessageService(
             MessageRepo messageRepo,
             ConversationRepo conversationRepo,
@@ -64,6 +65,7 @@ public class MessageService {
         this.fileStorageService = fileStorageService;
         this.apiAccessLogRepo = apiAccessLogRepo;
         this.restTemplate = restTemplate;
+        logger.info("🚀 Django API URL from config: {}", djangoApiUrl);
     }
 
     /**
@@ -79,7 +81,7 @@ public class MessageService {
                 Sort.by("createdAt").ascending()
         );
 
-        Page<Message> messages = messageRepo.findByConversationId(conversationId, sortedPageable);
+        Page<Message> messages = messageRepo.findByConversation_Id(conversationId, sortedPageable);
         return messages.map(this::convertToDto);
     }
 
@@ -90,6 +92,8 @@ public class MessageService {
     public MessageDto sendMessage(ObjectId conversationId, String username, String content, List<MultipartFile> photos) {
         Users user = findUserByUsername(username);
         Conversation conversation = validateUserOwnsConversation(conversationId, username);
+
+        logger.info("user content: " + content);
 
         // Check usage limits
         if (!usageService.canSendMessage(user)) {
@@ -171,7 +175,7 @@ public class MessageService {
 
         // Get recent messages for context
         Pageable pageable = PageRequest.of(0, MAX_HISTORY_MESSAGES, Sort.by("createdAt").descending());
-        Page<Message> recentMessages = messageRepo.findByConversationId(conversationId, pageable);
+        Page<Message> recentMessages = messageRepo.findByConversation_Id(conversationId, pageable);
 
         List<Map<String, Object>> history = recentMessages.getContent().stream()
                 .sorted(Comparator.comparing(Message::getCreatedAt))
@@ -201,6 +205,8 @@ public class MessageService {
         message.setRole(Message.Role.USER);
         message.setContent(content != null ? content : "");
         message.setTokenCount(estimateTokenCount(content));
+
+        logger.info("req content: " + content);
 
         if (photos != null && !photos.isEmpty()) {
             List<String> photoUrls = new ArrayList<>();
@@ -283,6 +289,7 @@ public class MessageService {
     private Map<String, Object> callDjangoAPI(String userInput, List<Map<String, Object>> history) {
         try {
             // Prepare request body
+            logger.info(userInput);
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("user_input", userInput != null ? userInput : "");
             requestBody.put("history", history);
@@ -297,7 +304,12 @@ public class MessageService {
             logger.debug("Calling Django API at: {} with body: {}", djangoApiUrl, requestBody);
 
             // Make API call
+            logger.info("📡 Sending to Django: URL={}, Body={}", djangoApiUrl, requestBody);
+
             ResponseEntity<Map> response = restTemplate.postForEntity(djangoApiUrl, request, Map.class);
+
+            logger.info("✅ Django Response: Status={}, Body={}", response.getStatusCode(), response.getBody());
+
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 logger.debug("Django API response: {}", response.getBody());
@@ -321,7 +333,7 @@ public class MessageService {
     private List<Map<String, Object>> prepareConversationHistory(ObjectId conversationId) {
         // Get recent messages for context
         Pageable pageable = PageRequest.of(0, MAX_HISTORY_MESSAGES, Sort.by("createdAt").descending());
-        Page<Message> recentMessages = messageRepo.findByConversationId(conversationId, pageable);
+        Page<Message> recentMessages = messageRepo.findByConversation_Id(conversationId, pageable);
 
         return recentMessages.getContent().stream()
                 .sorted(Comparator.comparing(Message::getCreatedAt))

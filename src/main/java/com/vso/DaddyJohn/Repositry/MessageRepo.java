@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface MessageRepo extends MongoRepository<Message, ObjectId> {
     // Find all messages for a specific conversation, with pagination
-    Page<Message> findByConversationId(ObjectId conversationId, Pageable pageable);
+    Page<Message> findByConversation_Id(ObjectId conversationId, Pageable pageable);
 
     void deleteAllByConversationId(ObjectId conversationId);
 }

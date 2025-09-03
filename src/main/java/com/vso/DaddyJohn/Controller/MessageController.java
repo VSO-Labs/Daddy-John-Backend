@@ -67,10 +67,12 @@ public class MessageController {
             throw new IllegalArgumentException("Invalid conversation ID format.");
         }
 
+        System.out.println(request.getMessage());
+
         MessageDto response = messageService.sendMessage(
                 new ObjectId(conversationId),
                 authentication.getName(),
-                request.getContent(),
+                request.getMessage(),
                 null // No photos for text-only messages
         );
 
