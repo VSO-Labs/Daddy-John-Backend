@@ -1,12 +1,10 @@
 package com.vso.DaddyJohn.Controller;
 
-import com.vso.DaddyJohn.Dto.CreateMessageRequest;
 import com.vso.DaddyJohn.Dto.MessageDto;
 import com.vso.DaddyJohn.Service.MessageService;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -16,8 +14,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Handles all API requests related to messages within conversations.
- * Manages chat interactions between users and the AI assistant.
+ * Handles all API requests for messages within a specific conversation.
+ * Use Case: Manages the sending and receiving of chat messages with optional photo attachments.
  */
 @RestController
 @RequestMapping("/api/conversations/{conversationId}/messages")
@@ -31,147 +29,108 @@ public class MessageController {
     }
 
     /**
-     * Retrieves all messages for a specific conversation with pagination.
-     * Use Case: Loading chat history when a user opens a conversation.
+     * Retrieves a paginated list of all messages within a given conversation.
+     * Use Case: To load and display the chat history when a user opens a conversation.
      */
     @GetMapping
-    public ResponseEntity<Page<MessageDto>> getMessagesForConversation(
+    public Page<MessageDto> getAllMessagesForConversation(
             Authentication authentication,
             @PathVariable String conversationId,
             Pageable pageable) {
 
         if (!ObjectId.isValid(conversationId)) {
-            throw new IllegalArgumentException("Invalid conversation ID format.");
+            throw new IllegalArgumentException("Invalid Conversation ID format. Please provide a valid 24-character hex string.");
         }
-
-        Page<MessageDto> messages = messageService.getMessagesForConversation(
+        return messageService.getAllMessagesForConversation(
                 new ObjectId(conversationId),
                 authentication.getName(),
                 pageable
         );
-
-        return ResponseEntity.ok(messages);
     }
 
     /**
-     * Sends a text message to the AI and receives a response.
-     * Use Case: Standard text-based chat interaction.
+     * Posts a new text-only message to a conversation and gets the AI's response.
+     * Use Case: When a user types a text message and hits 'send' in the chat window.
      */
     @PostMapping
-    public ResponseEntity<MessageDto> sendMessage(
+    public ResponseEntity<MessageDto> postNewTextMessage(
             Authentication authentication,
             @PathVariable String conversationId,
-            @RequestBody CreateMessageRequest request) {
+            @RequestBody Map<String, String> body) {
+
+        String content = body.get("message");
 
         if (!ObjectId.isValid(conversationId)) {
-            throw new IllegalArgumentException("Invalid conversation ID format.");
+            throw new IllegalArgumentException("Invalid Conversation ID format. Please provide a valid 24-character hex string.");
         }
 
-        System.out.println(request.getMessage());
-
-        MessageDto response = messageService.sendMessage(
+        MessageDto response = messageService.postNewMessage(
                 new ObjectId(conversationId),
-                authentication.getName(),
-                request.getMessage(),
-                null // No photos for text-only messages
+                content,
+                authentication.getName()
         );
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.ok(response);
     }
 
+
     /**
-     * Sends a message with photos to the AI and receives a response.
-     * Use Case: Image-based chat interaction with optional text.
+     * Posts a new message with photos to a conversation and gets the AI's response.
+     * Use Case: When a user uploads photos with or without text and sends them.
      */
     @PostMapping("/with-photos")
-    public ResponseEntity<MessageDto> sendMessageWithPhotos(
+    public ResponseEntity<MessageDto> postNewMessageWithPhotos(
             Authentication authentication,
             @PathVariable String conversationId,
-            @RequestParam(value = "content", required = false) String content,
+            @RequestParam(value = "message", required = false, defaultValue = "") String content,
             @RequestParam("photos") List<MultipartFile> photos) {
 
         if (!ObjectId.isValid(conversationId)) {
-            throw new IllegalArgumentException("Invalid conversation ID format.");
+            throw new IllegalArgumentException("Invalid Conversation ID format. Please provide a valid 24-character hex string.");
         }
 
-        if (photos == null || photos.isEmpty()) {
-            throw new IllegalArgumentException("At least one photo is required.");
+        // Validate that at least photos or message content is provided
+        if ((content == null || content.trim().isEmpty()) && (photos == null || photos.isEmpty())) {
+            throw new IllegalArgumentException("Either message content or photos must be provided.");
         }
 
-        MessageDto response = messageService.sendMessage(
+        MessageDto response = messageService.postNewMessage(
                 new ObjectId(conversationId),
+                content.trim().isEmpty() ? "Photo message" : content,
                 authentication.getName(),
-                content,
                 photos
         );
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.ok(response);
     }
 
     /**
-     * Retrieves a specific message by ID.
-     * Use Case: Getting details of a particular message.
+     * Alternative endpoint that handles both text and photos in a single request
+     * Use Case: Unified endpoint for frontend to send any type of message
      */
-    @GetMapping("/{messageId}")
-    public ResponseEntity<MessageDto> getMessage(
+    @PostMapping("/send")
+    public ResponseEntity<MessageDto> sendMessage(
             Authentication authentication,
             @PathVariable String conversationId,
-            @PathVariable String messageId) {
-
-        if (!ObjectId.isValid(conversationId) || !ObjectId.isValid(messageId)) {
-            throw new IllegalArgumentException("Invalid ID format.");
-        }
-
-        MessageDto message = messageService.getMessageById(
-                new ObjectId(messageId),
-                new ObjectId(conversationId),
-                authentication.getName()
-        );
-
-        return ResponseEntity.ok(message);
-    }
-
-    /**
-     * Deletes a specific message.
-     * Use Case: Allowing users to remove messages from their conversation history.
-     */
-    @DeleteMapping("/{messageId}")
-    public ResponseEntity<Void> deleteMessage(
-            Authentication authentication,
-            @PathVariable String conversationId,
-            @PathVariable String messageId) {
-
-        if (!ObjectId.isValid(conversationId) || !ObjectId.isValid(messageId)) {
-            throw new IllegalArgumentException("Invalid ID format.");
-        }
-
-        messageService.deleteMessage(
-                new ObjectId(messageId),
-                new ObjectId(conversationId),
-                authentication.getName()
-        );
-
-        return ResponseEntity.noContent().build();
-    }
-
-    /**
-     * Gets the conversation summary for context.
-     * Use Case: Providing conversation context to the AI.
-     */
-    @GetMapping("/summary")
-    public ResponseEntity<Map<String, Object>> getConversationSummary(
-            Authentication authentication,
-            @PathVariable String conversationId) {
+            @RequestParam(value = "message", required = false, defaultValue = "") String content,
+            @RequestParam(value = "photos", required = false) List<MultipartFile> photos) {
 
         if (!ObjectId.isValid(conversationId)) {
-            throw new IllegalArgumentException("Invalid conversation ID format.");
+            throw new IllegalArgumentException("Invalid Conversation ID format. Please provide a valid 24-character hex string.");
         }
 
-        Map<String, Object> summary = messageService.getConversationSummary(
+        // Validate that at least photos or message content is provided
+        if ((content == null || content.trim().isEmpty()) && (photos == null || photos.isEmpty())) {
+            throw new IllegalArgumentException("Either message content or photos must be provided.");
+        }
+
+        MessageDto response = messageService.postNewMessage(
                 new ObjectId(conversationId),
-                authentication.getName()
+                content.trim().isEmpty() ? "Photo message" : content,
+                authentication.getName(),
+                photos
         );
 
-        return ResponseEntity.ok(summary);
+        return ResponseEntity.ok(response);
     }
 }

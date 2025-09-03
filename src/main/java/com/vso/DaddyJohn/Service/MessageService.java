@@ -1,384 +1,229 @@
 package com.vso.DaddyJohn.Service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vso.DaddyJohn.Dto.MessageDto;
-import com.vso.DaddyJohn.Entity.*;
-import com.vso.DaddyJohn.Repositry.*;
+import com.vso.DaddyJohn.Entity.Conversation;
+import com.vso.DaddyJohn.Entity.Message;
+import com.vso.DaddyJohn.Entity.Users;
+import com.vso.DaddyJohn.Repositry.ConversationRepo;
+import com.vso.DaddyJohn.Repositry.MessageRepo;
+import com.vso.DaddyJohn.Repositry.UserRepo;
 import org.bson.types.ObjectId;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-/**
- * Service layer for handling all message-related operations.
- * Manages the core chat functionality including AI integration.
- */
 @Service
 public class MessageService {
-
-    private static final Logger logger = LoggerFactory.getLogger(MessageService.class);
-    private static final int MAX_HISTORY_MESSAGES = 10; // Limit history for context
-    private static final int MAX_RETRIES = 3;
-    private static final long RETRY_DELAY_MS = 1000;
 
     private final MessageRepo messageRepo;
     private final ConversationRepo conversationRepo;
     private final UserRepo userRepo;
     private final UsageService usageService;
-    private final FileStorageService fileStorageService;
-    private final ApiAccessLogRepo apiAccessLogRepo;
     private final RestTemplate restTemplate;
+    private final FileStorageService fileStorageService;
+    private final ObjectMapper objectMapper;
 
     @Value("${services.chatbot.django-url}")
     private String djangoApiUrl;
 
-
-    public MessageService(
-            MessageRepo messageRepo,
-            ConversationRepo conversationRepo,
-            UserRepo userRepo,
-            UsageService usageService,
-            FileStorageService fileStorageService,
-            ApiAccessLogRepo apiAccessLogRepo,
-            RestTemplate restTemplate) {
+    public MessageService(MessageRepo messageRepo, ConversationRepo conversationRepo,
+                          UserRepo userRepo, UsageService usageService, RestTemplate restTemplate,
+                          FileStorageService fileStorageService, ObjectMapper objectMapper) {
         this.messageRepo = messageRepo;
         this.conversationRepo = conversationRepo;
         this.userRepo = userRepo;
         this.usageService = usageService;
-        this.fileStorageService = fileStorageService;
-        this.apiAccessLogRepo = apiAccessLogRepo;
         this.restTemplate = restTemplate;
-        logger.info("🚀 Django API URL from config: {}", djangoApiUrl);
+        this.fileStorageService = fileStorageService;
+        this.objectMapper = objectMapper;
     }
 
     /**
-     * Retrieves paginated messages for a conversation.
+     * Posts a new message with optional photo attachments
      */
-    public Page<MessageDto> getMessagesForConversation(ObjectId conversationId, String username, Pageable pageable) {
-        validateUserOwnsConversation(conversationId, username);
-
-        // Sort messages by creation time (oldest first)
-        Pageable sortedPageable = PageRequest.of(
-                pageable.getPageNumber(),
-                pageable.getPageSize(),
-                Sort.by("createdAt").ascending()
-        );
-
-        Page<Message> messages = messageRepo.findByConversation_Id(conversationId, sortedPageable);
-        return messages.map(this::convertToDto);
-    }
-
-    /**
-     * Sends a message (with optional photos) and gets AI response.
-     */
-    @Transactional
-    public MessageDto sendMessage(ObjectId conversationId, String username, String content, List<MultipartFile> photos) {
+    public MessageDto postNewMessage(ObjectId conversationId, String content,
+                                     String username, List<MultipartFile> photos) {
         Users user = findUserByUsername(username);
-        Conversation conversation = validateUserOwnsConversation(conversationId, username);
-
-        logger.info("user content: " + content);
-
-        // Check usage limits
-        if (!usageService.canSendMessage(user)) {
-            throw new RuntimeException("Daily message limit reached. Please upgrade your plan or wait until tomorrow.");
-        }
-
-        // Save user message
-        Message userMessage = createUserMessage(conversation, content, photos);
-        Message savedUserMessage = messageRepo.save(userMessage);
-        logger.info("User message saved with ID: {}", savedUserMessage.getId());
-
-        // Update conversation timestamp
-        conversation.setUpdatedAt(LocalDateTime.now());
-        conversationRepo.save(conversation);
-
-        // Get AI response
-        Message aiResponse = getAIResponse(conversation, user, content);
-        Message savedAiResponse = messageRepo.save(aiResponse);
-        logger.info("AI response saved with ID: {}", savedAiResponse.getId());
-
-        // Record usage
-        int totalTokens = (userMessage.getTokenCount() != null ? userMessage.getTokenCount() : 0) +
-                (aiResponse.getTokenCount() != null ? aiResponse.getTokenCount() : 0);
-        usageService.recordUsage(user, totalTokens);
-
-        // Log API access
-        logApiAccess(user, conversation, content, aiResponse.getContent(), totalTokens);
-
-        return convertToDto(savedAiResponse);
-    }
-
-    /**
-     * Gets a specific message by ID.
-     */
-    public MessageDto getMessageById(ObjectId messageId, ObjectId conversationId, String username) {
-        validateUserOwnsConversation(conversationId, username);
-
-        Message message = messageRepo.findById(messageId)
-                .orElseThrow(() -> new RuntimeException("Message not found"));
-
-        if (!message.getConversation().getId().equals(conversationId)) {
-            throw new AccessDeniedException("Message does not belong to this conversation");
-        }
-
-        return convertToDto(message);
-    }
-
-    /**
-     * Deletes a message.
-     */
-    @Transactional
-    public void deleteMessage(ObjectId messageId, ObjectId conversationId, String username) {
-        validateUserOwnsConversation(conversationId, username);
-
-        Message message = messageRepo.findById(messageId)
-                .orElseThrow(() -> new RuntimeException("Message not found"));
-
-        if (!message.getConversation().getId().equals(conversationId)) {
-            throw new AccessDeniedException("Message does not belong to this conversation");
-        }
-
-        // Delete associated files if any
-        if (message.getPhotoUrls() != null) {
-            for (String photoUrl : message.getPhotoUrls()) {
-                String filename = photoUrl.substring(photoUrl.lastIndexOf("/") + 1);
-                fileStorageService.deleteFile(filename);
-            }
-        }
-
-        messageRepo.delete(message);
-        logger.info("Message {} deleted from conversation {}", messageId, conversationId);
-    }
-
-    /**
-     * Gets conversation summary for AI context.
-     */
-    public Map<String, Object> getConversationSummary(ObjectId conversationId, String username) {
-        validateUserOwnsConversation(conversationId, username);
-
-        // Get recent messages for context
-        Pageable pageable = PageRequest.of(0, MAX_HISTORY_MESSAGES, Sort.by("createdAt").descending());
-        Page<Message> recentMessages = messageRepo.findByConversation_Id(conversationId, pageable);
-
-        List<Map<String, Object>> history = recentMessages.getContent().stream()
-                .sorted(Comparator.comparing(Message::getCreatedAt))
-                .map(msg -> {
-                    Map<String, Object> historyItem = new HashMap<>();
-                    historyItem.put("role", msg.getRole().toString());
-                    historyItem.put("content", msg.getContent());
-                    historyItem.put("timestamp", msg.getCreatedAt().toString());
-                    return historyItem;
-                })
-                .collect(Collectors.toList());
-
-        Map<String, Object> summary = new HashMap<>();
-        summary.put("conversationId", conversationId.toHexString());
-        summary.put("messageCount", recentMessages.getTotalElements());
-        summary.put("history", history);
-        summary.put("latestSummary", null); // Could be implemented for long conversations
-
-        return summary;
-    }
-
-    // --- Private Helper Methods ---
-
-    private Message createUserMessage(Conversation conversation, String content, List<MultipartFile> photos) {
-        Message message = new Message();
-        message.setConversation(conversation);
-        message.setRole(Message.Role.USER);
-        message.setContent(content != null ? content : "");
-        message.setTokenCount(estimateTokenCount(content));
-
-        logger.info("req content: " + content);
-
-        if (photos != null && !photos.isEmpty()) {
-            List<String> photoUrls = new ArrayList<>();
-            List<Message.FileMetadata> attachments = new ArrayList<>();
-
-            for (MultipartFile photo : photos) {
-                try {
-                    String photoUrl = fileStorageService.storeFile(photo);
-                    photoUrls.add(photoUrl);
-
-                    Message.FileMetadata metadata = new Message.FileMetadata();
-                    metadata.setOriginalName(photo.getOriginalFilename());
-                    metadata.setStoredName(photoUrl.substring(photoUrl.lastIndexOf("/") + 1));
-                    metadata.setFileType(photo.getContentType());
-                    metadata.setFileSize(photo.getSize());
-                    metadata.setUrl(photoUrl);
-                    attachments.add(metadata);
-                } catch (IOException e) {
-                    logger.error("Failed to store photo: {}", e.getMessage());
-                    throw new RuntimeException("Failed to upload photo: " + e.getMessage());
-                }
-            }
-
-            message.setPhotoUrls(photoUrls);
-            message.setAttachments(attachments);
-            message.setMessageType(content != null && !content.isEmpty()
-                    ? Message.MessageType.TEXT_WITH_IMAGE
-                    : Message.MessageType.IMAGE);
-        } else {
-            message.setMessageType(Message.MessageType.TEXT);
-        }
-
-        return message;
-    }
-
-    private Message getAIResponse(Conversation conversation, Users user, String userInput) {
-        // Prepare conversation history
-        List<Map<String, Object>> history = prepareConversationHistory(conversation.getId());
-
-        // Call Django API with retries
-        Map<String, Object> aiResponse = callDjangoAPIWithRetry(userInput, history);
-
-        // Create AI message
-        Message aiMessage = new Message();
-        aiMessage.setConversation(conversation);
-        aiMessage.setRole(Message.Role.ASSISTANT);
-        aiMessage.setContent((String) aiResponse.get("response"));
-        aiMessage.setTokenCount((Integer) aiResponse.getOrDefault("token_count", estimateTokenCount(aiMessage.getContent())));
-        aiMessage.setMessageType(Message.MessageType.TEXT);
-
-        return aiMessage;
-    }
-
-    private Map<String, Object> callDjangoAPIWithRetry(String userInput, List<Map<String, Object>> history) {
-        Exception lastException = null;
-
-        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            try {
-                return callDjangoAPI(userInput, history);
-            } catch (Exception e) {
-                lastException = e;
-                logger.warn("Django API call attempt {} failed: {}", attempt, e.getMessage());
-
-                if (attempt < MAX_RETRIES) {
-                    try {
-                        Thread.sleep(RETRY_DELAY_MS * attempt); // Exponential backoff
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("Interrupted while retrying", ie);
-                    }
-                }
-            }
-        }
-
-        logger.error("All Django API call attempts failed", lastException);
-        // Return a fallback response
-        return createFallbackResponse();
-    }
-
-    private Map<String, Object> callDjangoAPI(String userInput, List<Map<String, Object>> history) {
-        try {
-            // Prepare request body
-            logger.info(userInput);
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("user_input", userInput != null ? userInput : "");
-            requestBody.put("history", history);
-            requestBody.put("latest_summary", null);
-
-            // Prepare headers
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-
-            logger.debug("Calling Django API at: {} with body: {}", djangoApiUrl, requestBody);
-
-            // Make API call
-            logger.info("📡 Sending to Django: URL={}, Body={}", djangoApiUrl, requestBody);
-
-            ResponseEntity<Map> response = restTemplate.postForEntity(djangoApiUrl, request, Map.class);
-
-            logger.info("✅ Django Response: Status={}, Body={}", response.getStatusCode(), response.getBody());
-
-
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                logger.debug("Django API response: {}", response.getBody());
-                return response.getBody();
-            } else {
-                throw new RuntimeException("Django API returned non-success status: " + response.getStatusCode());
-            }
-        } catch (Exception e) {
-            logger.error("Error calling Django API: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to get AI response: " + e.getMessage(), e);
-        }
-    }
-
-    private Map<String, Object> createFallbackResponse() {
-        Map<String, Object> fallback = new HashMap<>();
-        fallback.put("response", "I apologize, but I'm having trouble processing your request at the moment. Please try again in a few seconds.");
-        fallback.put("token_count", 20);
-        return fallback;
-    }
-
-    private List<Map<String, Object>> prepareConversationHistory(ObjectId conversationId) {
-        // Get recent messages for context
-        Pageable pageable = PageRequest.of(0, MAX_HISTORY_MESSAGES, Sort.by("createdAt").descending());
-        Page<Message> recentMessages = messageRepo.findByConversation_Id(conversationId, pageable);
-
-        return recentMessages.getContent().stream()
-                .sorted(Comparator.comparing(Message::getCreatedAt))
-                .map(msg -> {
-                    Map<String, Object> historyItem = new HashMap<>();
-                    historyItem.put("role", msg.getRole().toString().toLowerCase());
-                    historyItem.put("content", msg.getContent());
-                    return historyItem;
-                })
-                .collect(Collectors.toList());
-    }
-
-    private void logApiAccess(Users user, Conversation conversation, String request, String response, int tokensUsed) {
-        try {
-            ApiAccessLog log = new ApiAccessLog();
-            log.setUser(user);
-            log.setEndpoint("/api/conversations/" + conversation.getId() + "/messages");
-            log.setRequestPayload(Map.of("content", request != null ? request : ""));
-            log.setResponsePayload(Map.of("content", response != null ? response : ""));
-            log.setStatusCode(200);
-            log.setTokensUsed(tokensUsed);
-            apiAccessLogRepo.save(log);
-        } catch (Exception e) {
-            logger.error("Failed to log API access: {}", e.getMessage());
-        }
-    }
-
-    private Conversation validateUserOwnsConversation(ObjectId conversationId, String username) {
-        Users user = findUserByUsername(username);
-        Conversation conversation = conversationRepo.findById(conversationId)
-                .orElseThrow(() -> new RuntimeException("Conversation not found"));
+        Conversation conversation = findConversationById(conversationId);
 
         if (!conversation.getUser().getId().equals(user.getId())) {
-            throw new AccessDeniedException("You do not have permission to access this conversation");
+            throw new AccessDeniedException("You do not have permission to post in this conversation.");
         }
 
-        return conversation;
+        if (!usageService.canSendMessage(user)) {
+            throw new RuntimeException("Message limit exceeded for your current plan.");
+        }
+
+        List<String> photoUrls = new ArrayList<>();
+        if (photos != null && !photos.isEmpty()) {
+            photoUrls = validateAndStorePhotos(photos);
+        }
+
+        Message userMessage = new Message();
+        userMessage.setConversation(conversation);
+        userMessage.setRole(Message.Role.USER);
+        userMessage.setContent(content);
+        userMessage.setTokenCount(countTokens(content));
+        userMessage.setPhotoUrls(photoUrls);
+        messageRepo.save(userMessage);
+
+        String aiResponseContent;
+        int responseTokenCount;
+        try {
+            Map<String, Object> response;
+            if (photos != null && !photos.isEmpty()) {
+                response = callChatbotWithPhotos(content, photos);
+            } else {
+                response = callChatbotWithText(content);
+            }
+            aiResponseContent = (String) response.getOrDefault("response", "Sorry, I couldn't process your request.");
+            responseTokenCount = (Integer) response.getOrDefault("token_count", countTokens(aiResponseContent));
+        } catch (Exception e) {
+            aiResponseContent = "Sorry, an error occurred while connecting to the chatbot service: " + e.getMessage();
+            responseTokenCount = countTokens(aiResponseContent);
+        }
+
+        Message assistantMessage = new Message();
+        assistantMessage.setConversation(conversation);
+        assistantMessage.setRole(Message.Role.ASSISTANT);
+        assistantMessage.setContent(aiResponseContent);
+        assistantMessage.setTokenCount(responseTokenCount);
+        Message savedAssistantMessage = messageRepo.save(assistantMessage);
+
+        usageService.recordUsage(user, userMessage.getTokenCount() + responseTokenCount);
+
+        return convertToDto(savedAssistantMessage);
+    }
+
+    public MessageDto postNewMessage(ObjectId conversationId, String content, String username) {
+        return postNewMessage(conversationId, content, username, null);
+    }
+
+    private Map<String, Object> callChatbotWithText(String content) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("user_input", content);
+        requestBody.put("history", Collections.emptyList());
+        requestBody.put("latest_summary", null);
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        return restTemplate.postForObject(djangoApiUrl, entity, Map.class);
+    }
+
+    private Map<String, Object> callChatbotWithPhotos(String content, List<MultipartFile> photos) throws IOException {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+
+        Map<String, Object> jsonPayload = new HashMap<>();
+        jsonPayload.put("user_input", content);
+        jsonPayload.put("history", Collections.emptyList());
+        jsonPayload.put("latest_summary", null);
+
+        body.add("metadata", new HttpEntity<>(jsonPayload, createJsonHeaders()));
+
+
+        for (MultipartFile photo : photos) {
+            ByteArrayResource photoResource = new ByteArrayResource(photo.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return photo.getOriginalFilename();
+                }
+            };
+            body.add("photos", photoResource);
+        }
+
+        HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+        return restTemplate.postForObject(djangoApiUrl, entity, Map.class);
+    }
+
+    private HttpHeaders createJsonHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return headers;
+    }
+
+
+    private List<String> validateAndStorePhotos(List<MultipartFile> photos) {
+        List<String> photoUrls = new ArrayList<>();
+
+        if (photos.size() > 5) {
+            throw new RuntimeException("Maximum 5 photos allowed per message.");
+        }
+
+        for (MultipartFile photo : photos) {
+            if (!isValidImageType(photo)) {
+                throw new RuntimeException("Only image files (JPG, JPEG, PNG, GIF, WEBP) are allowed.");
+            }
+            if (photo.getSize() > 10 * 1024 * 1024) {
+                throw new RuntimeException("Photo size must be less than 10MB.");
+            }
+            try {
+                String photoUrl = fileStorageService.storeFile(photo);
+                photoUrls.add(photoUrl);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to store photo: " + e.getMessage());
+            }
+        }
+        return photoUrls;
+    }
+
+    private boolean isValidImageType(MultipartFile file) {
+        String contentType = file.getContentType();
+        return contentType != null && (
+                contentType.equals("image/jpeg") ||
+                        contentType.equals("image/jpg") ||
+                        contentType.equals("image/png") ||
+                        contentType.equals("image/gif") ||
+                        contentType.equals("image/webp")
+        );
+    }
+
+    public Page<MessageDto> getAllMessagesForConversation(ObjectId conversationId, String username, Pageable pageable) {
+        Users user = findUserByUsername(username);
+        Conversation conversation = findConversationById(conversationId);
+
+        if (!conversation.getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You do not have permission to view these messages.");
+        }
+        return messageRepo.findByConversationId(conversationId, pageable).map(this::convertToDto);
+    }
+
+    private int countTokens(String text) {
+        return (int) Math.ceil(text.length() / 4.0);
     }
 
     private Users findUserByUsername(String username) {
         Users user = userRepo.findByUsername(username);
         if (user == null) {
-            throw new IllegalStateException("Authenticated user not found in database");
+            throw new RuntimeException("User not found: " + username);
         }
+
         return user;
+    }
+
+    private Conversation findConversationById(ObjectId conversationId) {
+        return conversationRepo.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Conversation not found with ID: " + conversationId));
     }
 
     private MessageDto convertToDto(Message message) {
@@ -389,16 +234,6 @@ public class MessageService {
         dto.setTokenCount(message.getTokenCount());
         dto.setCreatedAt(message.getCreatedAt());
         dto.setPhotoUrls(message.getPhotoUrls());
-        dto.setMessageType(message.getMessageType());
-        dto.setAttachments(message.getAttachments());
         return dto;
-    }
-
-    private int estimateTokenCount(String text) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        // Rough estimation: 1 token ≈ 4 characters
-        return (int) Math.ceil(text.length() / 4.0);
     }
 }
