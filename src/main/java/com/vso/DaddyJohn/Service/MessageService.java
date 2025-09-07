@@ -5,6 +5,7 @@ import com.vso.DaddyJohn.Dto.MessageDto;
 import com.vso.DaddyJohn.Entity.Conversation;
 import com.vso.DaddyJohn.Entity.Message;
 import com.vso.DaddyJohn.Entity.Users;
+import com.vso.DaddyJohn.Exception.TokenLimitExceededException;
 import com.vso.DaddyJohn.Repositry.ConversationRepo;
 import com.vso.DaddyJohn.Repositry.MessageRepo;
 import com.vso.DaddyJohn.Repositry.UserRepo;
@@ -34,21 +35,20 @@ public class MessageService {
     private final MessageRepo messageRepo;
     private final ConversationRepo conversationRepo;
     private final UserRepo userRepo;
-    private final UsageService usageService;
+    private final TokenUsageService tokenUsageService;
     private final RestTemplate restTemplate;
     private final FileStorageService fileStorageService;
-    private final ObjectMapper objectMapper;
 
     @Value("${services.chatbot.django-url}")
     private String djangoApiUrl;
 
     public MessageService(MessageRepo messageRepo, ConversationRepo conversationRepo,
-                          UserRepo userRepo, UsageService usageService, RestTemplate restTemplate,
+                          UserRepo userRepo, TokenUsageService tokenUsageService, RestTemplate restTemplate,
                           FileStorageService fileStorageService, ObjectMapper objectMapper) {
         this.messageRepo = messageRepo;
         this.conversationRepo = conversationRepo;
         this.userRepo = userRepo;
-        this.usageService = usageService;
+        this.tokenUsageService = tokenUsageService;
         this.restTemplate = restTemplate;
         this.fileStorageService = fileStorageService;
         this.objectMapper = objectMapper;
@@ -66,8 +66,13 @@ public class MessageService {
             throw new AccessDeniedException("You do not have permission to post in this conversation.");
         }
 
-        if (!usageService.canSendMessage(user)) {
-            throw new RuntimeException("Message limit exceeded for your current plan.");
+        // Check token limit BEFORE making the API call
+        if (!tokenUsageService.canSendMessage(user, content)) {
+            Map<String, Object> tokenStatus = tokenUsageService.getUserTokenStatus(user);
+            throw new TokenLimitExceededException(
+                    "Token limit exceeded. You have used " + tokenStatus.get("tokensUsed") +
+                            " out of " + tokenStatus.get("tokensLimit") + " tokens this month."
+            );
         }
 
         List<String> photoUrls = new ArrayList<>();
@@ -75,16 +80,17 @@ public class MessageService {
             photoUrls = validateAndStorePhotos(photos);
         }
 
+        // Save user message
         Message userMessage = new Message();
         userMessage.setConversation(conversation);
         userMessage.setRole(Message.Role.USER);
         userMessage.setContent(content);
-        userMessage.setTokenCount(countTokens(content));
+        userMessage.setTokenCount(content.length() / 4); // Simple token count for user message
         userMessage.setPhotoUrls(photoUrls);
         messageRepo.save(userMessage);
 
+        // Get AI response
         String aiResponseContent;
-        int responseTokenCount;
         try {
             Map<String, Object> response;
             if (photos != null && !photos.isEmpty()) {
@@ -93,20 +99,23 @@ public class MessageService {
                 response = callChatbotWithText(content);
             }
             aiResponseContent = (String) response.getOrDefault("response", "Sorry, I couldn't process your request.");
-            responseTokenCount = (Integer) response.getOrDefault("token_count", countTokens(aiResponseContent));
         } catch (Exception e) {
             aiResponseContent = "Sorry, an error occurred while connecting to the chatbot service: " + e.getMessage();
-            responseTokenCount = countTokens(aiResponseContent);
         }
 
+        // Calculate actual tokens used
+        int tokensUsed = tokenUsageService.calculateTokens(content, aiResponseContent);
+
+        // Save assistant message
         Message assistantMessage = new Message();
         assistantMessage.setConversation(conversation);
         assistantMessage.setRole(Message.Role.ASSISTANT);
         assistantMessage.setContent(aiResponseContent);
-        assistantMessage.setTokenCount(responseTokenCount);
+        assistantMessage.setTokenCount(tokensUsed);
         Message savedAssistantMessage = messageRepo.save(assistantMessage);
 
-        usageService.recordUsage(user, userMessage.getTokenCount() + responseTokenCount);
+        // Record token usage
+        tokenUsageService.recordTokenUsage(user, tokensUsed);
 
         return convertToDto(savedAssistantMessage);
     }
@@ -141,7 +150,6 @@ public class MessageService {
 
         body.add("metadata", new HttpEntity<>(jsonPayload, createJsonHeaders()));
 
-
         for (MultipartFile photo : photos) {
             ByteArrayResource photoResource = new ByteArrayResource(photo.getBytes()) {
                 @Override
@@ -161,7 +169,6 @@ public class MessageService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         return headers;
     }
-
 
     private List<String> validateAndStorePhotos(List<MultipartFile> photos) {
         List<String> photoUrls = new ArrayList<>();
@@ -208,16 +215,11 @@ public class MessageService {
         return messageRepo.findByConversation_Id(conversationId, pageable).map(this::convertToDto);
     }
 
-    private int countTokens(String text) {
-        return (int) Math.ceil(text.length() / 4.0);
-    }
-
     private Users findUserByUsername(String username) {
         Users user = userRepo.findByUsername(username);
         if (user == null) {
             throw new RuntimeException("User not found: " + username);
         }
-
         return user;
     }
 

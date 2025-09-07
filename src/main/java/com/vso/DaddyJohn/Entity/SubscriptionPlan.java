@@ -16,14 +16,19 @@ public class SubscriptionPlan {
     @Id
     private ObjectId id;
 
-    private String name;
+    private String name; // FREE, MEDIUM, HIGH, UNLIMITED
 
     private String description;
 
     private BigDecimal pricePerMonth = BigDecimal.ZERO;
 
+    // Token limits
+    private Integer monthlyTokenLimit;
+
+    @Deprecated
     private Integer messageLimitPerDay;
 
+    @Deprecated
     private Integer messageLimitPerHours;
 
     private String aiAnalysisLevel;
@@ -39,4 +44,8 @@ public class SubscriptionPlan {
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private LocalDateTime updatedAt = LocalDateTime.now();
+
+    public boolean isUnlimited() {
+        return monthlyTokenLimit != null && monthlyTokenLimit == -1;
+    }
 }
