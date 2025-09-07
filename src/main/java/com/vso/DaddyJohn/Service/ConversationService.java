@@ -79,7 +79,7 @@ public class ConversationService {
         }
 
         // First, delete all messages associated with the conversation
-        messageRepo.deleteAllByConversationId(conversationId);
+        messageRepo.deleteAllByConversation_Id(conversationId);
 
         // Then, delete the conversation itself
         conversationRepo.delete(conversation);

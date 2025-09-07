@@ -205,7 +205,7 @@ public class MessageService {
         if (!conversation.getUser().getId().equals(user.getId())) {
             throw new AccessDeniedException("You do not have permission to view these messages.");
         }
-        return messageRepo.findByConversationId(conversationId, pageable).map(this::convertToDto);
+        return messageRepo.findByConversation_Id(conversationId, pageable).map(this::convertToDto);
     }
 
     private int countTokens(String text) {
