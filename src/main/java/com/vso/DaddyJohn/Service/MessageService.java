@@ -38,6 +38,7 @@ public class MessageService {
     private final TokenUsageService tokenUsageService;
     private final RestTemplate restTemplate;
     private final FileStorageService fileStorageService;
+    private final ObjectMapper objectMapper;
 
     @Value("${services.chatbot.django-url}")
     private String djangoApiUrl;

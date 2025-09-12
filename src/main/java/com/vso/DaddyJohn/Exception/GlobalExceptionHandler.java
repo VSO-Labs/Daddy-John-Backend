@@ -3,6 +3,7 @@ package com.vso.DaddyJohn.Exception;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -12,127 +13,146 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.context.request.WebRequest;
 
-import java.util.Map;
+import java.net.URI;
+import java.time.Instant;
 import java.util.HashMap;
+import java.util.Map;
 
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, Object>> handleIllegalArgumentException(IllegalArgumentException ex) {
-        logger.warn("Bad request: {}", ex.getMessage());
+    @ExceptionHandler(TokenLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleTokenLimitExceededException(
+            TokenLimitExceededException ex, WebRequest request) {
+        logger.warn("Token limit exceeded: {}", ex.getMessage());
 
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "Bad Request");
-        errorResponse.put("message", ex.getMessage());
-        errorResponse.put("timestamp", System.currentTimeMillis());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.PAYMENT_REQUIRED, ex.getMessage());
+        problemDetail.setTitle("Token Limit Exceeded");
+        problemDetail.setType(URI.create("https://api.daddyjohn.com/errors/token-limit-exceeded"));
+        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("path", request.getDescription(false).replace("uri=", ""));
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(problemDetail, HttpStatus.PAYMENT_REQUIRED);
     }
 
-    @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<Map<String, Object>> handleRuntimeException(RuntimeException ex) {
-        logger.error("Runtime exception: {}", ex.getMessage(), ex);
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ProblemDetail> handleIllegalArgumentException(
+            IllegalArgumentException ex, WebRequest request) {
+        logger.warn("Bad request: {}", ex.getMessage());
 
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "Bad Request");
-        errorResponse.put("message", ex.getMessage());
-        errorResponse.put("timestamp", System.currentTimeMillis());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, ex.getMessage());
+        problemDetail.setTitle("Bad Request");
+        problemDetail.setProperty("timestamp", Instant.now());
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(problemDetail, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccessDeniedException(AccessDeniedException ex) {
+    public ResponseEntity<ProblemDetail> handleAccessDeniedException(
+            AccessDeniedException ex, WebRequest request) {
         logger.warn("Access denied: {}", ex.getMessage());
 
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "Forbidden");
-        errorResponse.put("message", "You do not have permission to perform this action.");
-        errorResponse.put("timestamp", System.currentTimeMillis());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN, "You do not have permission to perform this action.");
+        problemDetail.setTitle("Forbidden");
+        problemDetail.setProperty("timestamp", Instant.now());
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.FORBIDDEN);
+        return new ResponseEntity<>(problemDetail, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(ResourceAccessException.class)
-    public ResponseEntity<Map<String, Object>> handleResourceAccessException(ResourceAccessException ex) {
-        logger.error("Resource access error (likely connection timeout): {}", ex.getMessage());
+    public ResponseEntity<ProblemDetail> handleResourceAccessException(
+            ResourceAccessException ex, WebRequest request) {
+        logger.error("Resource access error: {}", ex.getMessage());
 
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "Service Unavailable");
-        errorResponse.put("message", "External service is temporarily unavailable. Please try again later.");
-        errorResponse.put("timestamp", System.currentTimeMillis());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "External service is temporarily unavailable. Please try again later.");
+        problemDetail.setTitle("Service Unavailable");
+        problemDetail.setProperty("timestamp", Instant.now());
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.SERVICE_UNAVAILABLE);
-    }
-
-    @ExceptionHandler(HttpClientErrorException.class)
-    public ResponseEntity<Map<String, Object>> handleHttpClientErrorException(HttpClientErrorException ex) {
-        logger.error("HTTP client error ({}): {}", ex.getStatusCode(), ex.getResponseBodyAsString());
-
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "External Service Error");
-        errorResponse.put("message", "There was an issue with the external service. Please try again.");
-        errorResponse.put("timestamp", System.currentTimeMillis());
-
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_GATEWAY);
-    }
-
-    @ExceptionHandler(HttpServerErrorException.class)
-    public ResponseEntity<Map<String, Object>> handleHttpServerErrorException(HttpServerErrorException ex) {
-        logger.error("HTTP server error ({}): {}", ex.getStatusCode(), ex.getResponseBodyAsString());
-
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "External Service Error");
-        errorResponse.put("message", "The external service is experiencing issues. Please try again later.");
-        errorResponse.put("timestamp", System.currentTimeMillis());
-
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_GATEWAY);
+        return new ResponseEntity<>(problemDetail, HttpStatus.SERVICE_UNAVAILABLE);
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ResponseEntity<Map<String, Object>> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex) {
+    public ResponseEntity<ProblemDetail> handleMaxUploadSizeExceededException(
+            MaxUploadSizeExceededException ex, WebRequest request) {
         logger.warn("File upload size exceeded: {}", ex.getMessage());
 
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "File Too Large");
-        errorResponse.put("message", "The uploaded file is too large. Maximum size allowed is 10MB per file.");
-        errorResponse.put("timestamp", System.currentTimeMillis());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                "The uploaded file is too large. Maximum size allowed is 10MB per file.");
+        problemDetail.setTitle("File Too Large");
+        problemDetail.setProperty("timestamp", Instant.now());
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.PAYLOAD_TOO_LARGE);
+        return new ResponseEntity<>(problemDetail, HttpStatus.PAYLOAD_TOO_LARGE);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidationException(MethodArgumentNotValidException ex) {
+    public ResponseEntity<ProblemDetail> handleValidationException(
+            MethodArgumentNotValidException ex, WebRequest request) {
         logger.warn("Validation error: {}", ex.getMessage());
 
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "Validation Failed");
-        errorResponse.put("message", "Invalid request data");
-        errorResponse.put("timestamp", System.currentTimeMillis());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Invalid request data");
+        problemDetail.setTitle("Validation Failed");
+        problemDetail.setProperty("timestamp", Instant.now());
 
-        // Add specific field errors
+        // Add field errors
         Map<String, String> fieldErrors = new HashMap<>();
         ex.getBindingResult().getFieldErrors().forEach(error ->
                 fieldErrors.put(error.getField(), error.getDefaultMessage())
         );
-        errorResponse.put("fieldErrors", fieldErrors);
+        problemDetail.setProperty("fieldErrors", fieldErrors);
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(problemDetail, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(HttpClientErrorException.class)
+    public ResponseEntity<ProblemDetail> handleHttpClientErrorException(
+            HttpClientErrorException ex, WebRequest request) {
+        logger.error("HTTP client error ({}): {}", ex.getStatusCode(), ex.getResponseBodyAsString());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_GATEWAY,
+                "There was an issue with the external service. Please try again.");
+        problemDetail.setTitle("External Service Error");
+        problemDetail.setProperty("timestamp", Instant.now());
+
+        return new ResponseEntity<>(problemDetail, HttpStatus.BAD_GATEWAY);
+    }
+
+    @ExceptionHandler(HttpServerErrorException.class)
+    public ResponseEntity<ProblemDetail> handleHttpServerErrorException(
+            HttpServerErrorException ex, WebRequest request) {
+        logger.error("HTTP server error ({}): {}", ex.getStatusCode(), ex.getResponseBodyAsString());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_GATEWAY,
+                "The external service is experiencing issues. Please try again later.");
+        problemDetail.setTitle("External Service Error");
+        problemDetail.setProperty("timestamp", Instant.now());
+
+        return new ResponseEntity<>(problemDetail, HttpStatus.BAD_GATEWAY);
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGenericException(Exception ex) {
+    public ResponseEntity<ProblemDetail> handleGenericException(
+            Exception ex, WebRequest request) {
         logger.error("Unexpected error: {}", ex.getMessage(), ex);
 
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "Internal Server Error");
-        errorResponse.put("message", "An unexpected error occurred. Please try again later.");
-        errorResponse.put("timestamp", System.currentTimeMillis());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "An unexpected error occurred. Please try again later.");
+        problemDetail.setTitle("Internal Server Error");
+        problemDetail.setProperty("timestamp", Instant.now());
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
+        return new ResponseEntity<>(problemDetail, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }
