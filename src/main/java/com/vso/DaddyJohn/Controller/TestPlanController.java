@@ -8,8 +8,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -17,7 +20,6 @@ import java.util.Map;
 @RequestMapping("/api/test")
 @RequiredArgsConstructor
 @Slf4j
-@Profile({"dev", "test"}) // Only available in dev/test environments
 public class TestPlanController {
 
     private final TokenUsageService tokenUsageService;
@@ -120,5 +122,17 @@ public class TestPlanController {
                     "error", "Failed to reset usage"
             ));
         }
+    }
+
+    @PostMapping("/me/usage")
+    public ResponseEntity<Map<String, Object>> getUserTokenUsage(Authentication authentication) {
+        // 1. Find the user entity from the username in the JWT token.
+        Users currentUser = userRepo.findByUsername(authentication.getName());
+
+        // 2. Delegate to the TokenUsageService to get the status details.
+        Map<String, Object> tokenStatus = tokenUsageService.getUserTokenStatus(currentUser);
+
+        // 3. Return the status map with a 200 OK response.
+        return ResponseEntity.ok(tokenStatus);
     }
 }

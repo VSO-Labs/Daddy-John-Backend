@@ -12,6 +12,12 @@ spring:
             max-request-size: 50MB
             enabled: true
 
+    # Enable scheduling for monthly reset
+    task:
+        scheduling:
+            pool:
+                size: 2
+
 logging:
     level:
         com.vso.DaddyJohn: ${LOG_LEVEL:INFO}
@@ -32,6 +38,26 @@ app:
     file:
         upload-dir: ${UPLOAD_DIR:uploads}
         base-url: ${FILE_BASE_URL:http://localhost:8080/files}
+
+    # Subscription Plan Configuration
+    plans:
+        limits:
+            free:
+                tokens: ${PLAN_FREE_TOKENS:500}
+                display-name: Free
+                description: Free tier with 500 tokens per month
+            medium:
+                tokens: ${PLAN_MEDIUM_TOKENS:1500}
+                display-name: Medium
+                description: Medium tier with 1500 tokens per month
+            high:
+                tokens: ${PLAN_HIGH_TOKENS:5000}
+                display-name: High
+                description: High tier with 5000 tokens per month
+            unlimited:
+                tokens: ${PLAN_UNLIMITED_TOKENS:-1}
+                display-name: Unlimited
+                description: Unlimited tokens per month
 
 services:
     chatbot:
