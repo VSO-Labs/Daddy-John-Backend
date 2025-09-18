@@ -99,9 +99,12 @@ public class MessageService {
             } else {
                 response = callChatbotWithText(content);
             }
-            aiResponseContent = (String) response.getOrDefault("response", "Sorry, I couldn't process your request.");
+
+            // Enhanced response processing with multiple possible keys
+            aiResponseContent = extractResponseContent(response);
+
         } catch (Exception e) {
-            aiResponseContent = "Sorry, an error occurred while connecting to the chatbot service: " + e.getMessage();
+            aiResponseContent = "Sorry, an error occurred while connecting to the chatbot service.";
         }
 
         // Calculate actual tokens used
@@ -125,6 +128,37 @@ public class MessageService {
         return postNewMessage(conversationId, content, username, null);
     }
 
+    private String extractResponseContent(Map<String, Object> response) {
+        if (response == null) {
+            return "No response received from chatbot service.";
+        }
+
+        // Try different possible response keys
+        String[] possibleKeys = {"response", "message", "content", "reply", "answer", "text"};
+
+        for (String key : possibleKeys) {
+            Object value = response.get(key);
+            if (value != null) {
+                String content = value.toString().trim();
+                if (!content.isEmpty()) {
+                    return content;
+                }
+            }
+        }
+
+        // If no standard keys work, check if there's any non-null string value
+        for (Object value : response.values()) {
+            if (value instanceof String) {
+                String content = ((String) value).trim();
+                if (!content.isEmpty()) {
+                    return content;
+                }
+            }
+        }
+
+        return "Unable to process response from chatbot service.";
+    }
+
     private Map<String, Object> callChatbotWithText(String content) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -135,7 +169,17 @@ public class MessageService {
         requestBody.put("latest_summary", null);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-        return restTemplate.postForObject(djangoApiUrl, entity, Map.class);
+
+        try {
+            ResponseEntity<Map> responseEntity = restTemplate.postForEntity(djangoApiUrl, entity, Map.class);
+            return responseEntity.getBody();
+        } catch (Exception e) {
+            // Return a map with error information
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Failed to connect to chatbot service");
+            errorResponse.put("response", "Sorry, I'm currently unavailable. Please try again later.");
+            return errorResponse;
+        }
     }
 
     private Map<String, Object> callChatbotWithPhotos(String content, List<MultipartFile> photos) throws IOException {
@@ -162,7 +206,17 @@ public class MessageService {
         }
 
         HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
-        return restTemplate.postForObject(djangoApiUrl, entity, Map.class);
+
+        try {
+            ResponseEntity<Map> responseEntity = restTemplate.postForEntity(djangoApiUrl, entity, Map.class);
+            return responseEntity.getBody();
+        } catch (Exception e) {
+            // Return a map with error information
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Failed to connect to chatbot service");
+            errorResponse.put("response", "Sorry, I'm currently unavailable. Please try again later.");
+            return errorResponse;
+        }
     }
 
     private HttpHeaders createJsonHeaders() {

@@ -28,16 +28,11 @@ public class MessageController {
         this.messageService = messageService;
     }
 
-    /**
-     * Retrieves a paginated list of all messages within a given conversation.
-     * Use Case: To load and display the chat history when a user opens a conversation.
-     */
     @GetMapping
     public Page<MessageDto> getAllMessagesForConversation(
             Authentication authentication,
             @PathVariable String conversationId,
             Pageable pageable) {
-
         if (!ObjectId.isValid(conversationId)) {
             throw new IllegalArgumentException("Invalid Conversation ID format. Please provide a valid 24-character hex string.");
         }
@@ -48,16 +43,11 @@ public class MessageController {
         );
     }
 
-    /**
-     * Posts a new text-only message to a conversation and gets the AI's response.
-     * Use Case: When a user types a text message and hits 'send' in the chat window.
-     */
     @PostMapping
     public ResponseEntity<MessageDto> postNewTextMessage(
             Authentication authentication,
             @PathVariable String conversationId,
             @RequestBody Map<String, String> body) {
-
         String content = body.get("message");
 
         if (!ObjectId.isValid(conversationId)) {
@@ -73,23 +63,16 @@ public class MessageController {
         return ResponseEntity.ok(response);
     }
 
-
-    /**
-     * Posts a new message with photos to a conversation and gets the AI's response.
-     * Use Case: When a user uploads photos with or without text and sends them.
-     */
     @PostMapping("/with-photos")
     public ResponseEntity<MessageDto> postNewMessageWithPhotos(
             Authentication authentication,
             @PathVariable String conversationId,
             @RequestParam(value = "message", required = false, defaultValue = "") String content,
             @RequestParam("photos") List<MultipartFile> photos) {
-
         if (!ObjectId.isValid(conversationId)) {
             throw new IllegalArgumentException("Invalid Conversation ID format. Please provide a valid 24-character hex string.");
         }
 
-        // Validate that at least photos or message content is provided
         if ((content == null || content.trim().isEmpty()) && (photos == null || photos.isEmpty())) {
             throw new IllegalArgumentException("Either message content or photos must be provided.");
         }
@@ -104,22 +87,16 @@ public class MessageController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Alternative endpoint that handles both text and photos in a single request
-     * Use Case: Unified endpoint for frontend to send any type of message
-     */
     @PostMapping("/send")
     public ResponseEntity<MessageDto> sendMessage(
             Authentication authentication,
             @PathVariable String conversationId,
             @RequestParam(value = "message", required = false, defaultValue = "") String content,
             @RequestParam(value = "photos", required = false) List<MultipartFile> photos) {
-
         if (!ObjectId.isValid(conversationId)) {
             throw new IllegalArgumentException("Invalid Conversation ID format. Please provide a valid 24-character hex string.");
         }
 
-        // Validate that at least photos or message content is provided
         if ((content == null || content.trim().isEmpty()) && (photos == null || photos.isEmpty())) {
             throw new IllegalArgumentException("Either message content or photos must be provided.");
         }
