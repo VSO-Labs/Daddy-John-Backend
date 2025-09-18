@@ -61,4 +61,4 @@ app:
 
 services:
     chatbot:
-        django-url: ${DJANGO_API_URL:https://daddy-john-chat-server.onrender.com/chat}
+        django-url: ${DJANGO_API_URL:http://localhost:3000/chat}
